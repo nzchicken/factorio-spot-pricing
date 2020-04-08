@@ -1,0 +1,134 @@
+Resources:
+  Ec2Sg:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupName: ${self:service}-ec2
+      GroupDescription: ${self:service}-ec2
+      SecurityGroupIngress:
+        - FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+        - FromPort: 34197
+          ToPort: 34197
+          IpProtocol: udp
+          CidrIp: 0.0.0.0/0
+      VpcId: 
+        Ref: Vpc
+
+  LaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      AssociatePublicIpAddress: true
+      IamInstanceProfile:
+        Ref: InstanceProfile
+      ImageId: ${self:custom.ecsAMI} 
+      InstanceType: ${self:custom.instanceType}
+      KeyName: ${self:custom.keyPairName}
+      SecurityGroups:
+        - Ref: Ec2Sg
+      SpotPrice: ${self:custom.spotPrice}
+      UserData:
+        Fn::Base64: 
+          Fn::Join: 
+            - "\n"
+            - - "#!/bin/bash"
+              - "yum install -y amazon-efs-utils"
+              - "mkdir /opt/factorio"
+              - Fn::Join:
+                - ""
+                - - "mount -t efs "
+                  - Ref: Efs
+                  - ":/ /opt/factorio"
+              - "chown 845:845 /opt/factorio"
+              - Fn::Join:
+                - ""
+                - - "echo ECS_CLUSTER="
+                  - Ref: EcsCluster
+                  - " >> /etc/ecs/ecs.config"
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn:
+      - MountA
+      - MountB
+    Properties:
+      AutoScalingGroupName: ${self:provider.environment.AUTOSCALING_GROUP}
+      DesiredCapacity: 1 
+      LaunchConfigurationName:
+        Ref: LaunchConfiguration
+      MaxSize: 1
+      MinSize: 0
+      VPCZoneIdentifier:
+        - Ref: SubnetA
+        - Ref: SubnetB
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+      Policies:
+        - PolicyName: root
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - Effect: "Allow"
+                Action: "route53:*"
+                Resource: "*"
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: 
+      Roles:
+        - Ref: InstanceRole
+
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: ${self:service}-cluster
+
+  EcsService:
+    Type: AWS::ECS::Service
+    Properties: 
+      Cluster: 
+        Ref: EcsCluster
+      DesiredCount: 1
+      ServiceName: ${self:service}-ecs-service
+      TaskDefinition: 
+        Ref: EcsTask  
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 0
+
+  EcsTask:
+    Type: AWS::ECS::TaskDefinition
+    Properties: 
+      Volumes:
+      - Host:
+          SourcePath: /opt/factorio
+        Name: factorio
+      ContainerDefinitions:      
+        - Name: factorio
+          MemoryReservation: 1024
+          Image: "factoriotools/factorio:latest"
+          PortMappings:
+          - ContainerPort: 34197
+            HostPort: 34197
+            Protocol: udp
+          - ContainerPort: 27015
+            HostPort: 27015
+            Protocol: tcp
+          MountPoints:
+          - ContainerPath: /factorio
+            SourceVolume: factorio
+            ReadOnly: false

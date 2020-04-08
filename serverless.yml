@@ -1,0 +1,63 @@
+service: factorio
+
+custom:
+  keyPairName: factorio-ssh
+  spotPrice: "0.05"
+  instanceType: m3.medium
+  ecsAMI: ${ssm:/aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id}
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  region: eu-central-1
+  stage: prod
+  environment:
+    AUTOSCALING_GROUP: ${self:service}-asg
+    AUTH_TOKEN: ${ssm:/factorio/scaling/auth}
+    ECS_CLUSTER: ${self:service}-cluster
+    ECS_SERVICE: ${self:service}-ecs-service
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - "autoscaling:SetDesiredCapacity"
+      Resource: 
+        - arn:aws:autoscaling:*:*:autoScalingGroup:*:autoScalingGroupName/${self:provider.environment.AUTOSCALING_GROUP}
+    - Effect: "Allow"
+      Action:
+        - "autoscaling:DescribeAutoScalingGroups"
+        - "autoscaling:DescribeAutoScalingInstances"
+        - "ec2:DescribeInstances"
+        - "ecs:DescribeServices"
+      Resource:
+        - "*" 
+
+package:
+  exclude:
+    - ./**
+  include:
+    - src/**
+
+functions:
+  start:
+    handler: src/handler.start
+    events:
+      - http:
+          path: start
+          method: get
+  stop:
+    handler: src/handler.stop
+    events:
+      - http:
+          path: stop
+          method: get
+  status:
+    handler: src/handler.status
+    events:
+      - http:
+          path: status
+          method: get
+
+resources:
+  - ${file(efs.yml)}
+  - ${file(instance.yml)}
+  - ${file(vpc.yml)}
