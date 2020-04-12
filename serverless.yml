@@ -58,6 +58,6 @@ functions:
           method: get
 
 resources:
-  - ${file(efs.yml)}
-  - ${file(instance.yml)}
-  - ${file(vpc.yml)}
+  - ${file(./resources/efs.yml)}
+  - ${file(./resources/instance.yml)}
+  - ${file(./resources/vpc.yml)}
