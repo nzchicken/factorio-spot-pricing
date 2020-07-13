@@ -132,3 +132,8 @@ Resources:
           - ContainerPath: /factorio
             SourceVolume: factorio
             ReadOnly: false
+          #Environment:
+            #- Name: 'SAVE_NAME'
+              #Value: magic
+            #- Name: LOAD_LATEST_SAVE
+              #Value: false
